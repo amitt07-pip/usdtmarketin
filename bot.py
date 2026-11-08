@@ -114,7 +114,7 @@ def render_not_in_group(missing: list[tuple[str, str]]) -> tuple[str, InlineKeyb
 
 def party_line(username: str, user_id: Optional[int]) -> str:
     uid = str(user_id) if user_id else "unknown"
-    return f"@{html.escape(username)} <code>{uid}</code>"
+    return f"@{html.escape(username)} [<code>{uid}</code>]"
 
 
 def render_deal_card(
@@ -525,7 +525,7 @@ def render_stats(username: Optional[str], user_id: int, name: Optional[str], st:
     who = f"@{html.escape(username)}" if username else html.escape(name or "User")
     return (
         f"{E_STATS} <b>User Stats</b>\n\n"
-        f"{E_USERNAME} <b>Username: {who} <code>{user_id}</code></b>\n"
+        f"{E_USERNAME} <b>Username: {who} [<code>{user_id}</code>]</b>\n"
         f"{E_TOTAL} <b>Total Escrows:</b> <code>{st['total']}</code>\n"
         f"{E_RANK} <b>Ranking:</b> <code>{ordinal(st['rank'])}</code>\n"
         f"{E_WORTH} <b>Total Worth:</b> <code>{fmt_usd(st['worth'])}</code>\n"

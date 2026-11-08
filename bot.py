@@ -276,7 +276,7 @@ def render_closed(deal, amount: Decimal) -> str:
         f"{E_CLOSED} <b>Deal {deal['deal_id']} has been closed!</b>\n"
         f"~ @{html.escape(deal['seller_username'])} and @{html.escape(deal['buyer_username'])} "
         f"are requested to drop the vouch before leaving.\n\n"
-        f"<b>Vouch @{VOUCH_CHANNEL} for ${fmt_amount(amount)} deal, safely escrowed.</b>"
+        f"<code>Vouch @{VOUCH_CHANNEL} for ${fmt_amount(amount)} deal, safely escrowed.</code>"
     )
 
 

@@ -28,6 +28,12 @@ Telegram escrow transaction manager bot (python-telegram-bot 22.8 + Telethon use
    The bot posts the closed/vouch message and marks the deal `completed`; later `/close` or `/release`
    on it get "❌ No ongoing deals found for you…".
 
+## Stats
+
+`/stats` (anyone): own stats; reply to a user or `/stats @username` for theirs. Counts completed (closed)
+deals where the user was seller or buyer. Ranking is by total worth; users with no deals are ranked last
+(group member count). Average time is `/add` → first `/release` (or `/close` if no release).
+
 ## Escrower addresses
 
 - `/setupaddy` (escrowers, bot DM only): pick token (USDT) → network (BSC/BEP20, Polygon, ETH/ERC20, TRX/TRC20)

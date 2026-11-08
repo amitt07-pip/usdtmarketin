@@ -43,6 +43,15 @@ E_UNKNOWN = emoji("5213195952008997792", "⚠️")
 E_MASKED = emoji("5240241223632954241", "📍")
 E_NOT_REGISTERED = emoji("5019523782004441717", "❌")
 
+E_STATS = emoji("5258362837411045098", "📊")
+E_USERNAME = emoji("5388624995020708381", "👤")
+E_TOTAL = emoji("5364138617667078875", "🤝")
+E_RANK = emoji("5931472654660800739", "🏆")
+E_WORTH = emoji("5971944878815317190", "💰")
+E_AVG_TIME = emoji("5258419835922030550", "⏱")
+E_MAX = emoji("5280625405252870672", "📈")
+E_RATE = emoji("5197474765387864959", "✅")
+
 VOUCH_CHANNEL = "usdtmarketin"
 NO_ONGOING_DEALS = "<i>❌ No ongoing deals found for you. Create or accept a deal first.</i>"
 
@@ -242,6 +251,8 @@ async def request_cmd(update: Update, kind: str, party: str) -> None:
     )
     await msg.reply_text(render_request(deal, kind), parse_mode=ParseMode.HTML, reply_markup=markup)
     db.set_status(deal["deal_id"], f"{kind.lower()}_requested")
+    if kind == "Release":
+        db.mark_released(deal["deal_id"])
     log.info("%s requested for %s by %s", kind, deal["deal_id"], user.id)
 
 
@@ -434,6 +445,95 @@ async def deleteaddy_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await msg.reply_text("Select the address to delete:", reply_markup=markup)
 
 
+def ordinal(n: int) -> str:
+    suffix = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
+
+
+def fmt_duration(seconds: float) -> str:
+    seconds = int(seconds)
+    if seconds < 60:
+        return f"{seconds}s"
+    minutes = seconds // 60
+    if minutes < 60:
+        return f"{minutes}m"
+    hours, minutes = divmod(minutes, 60)
+    if hours < 24:
+        return f"{hours}h {minutes}m" if minutes else f"{hours}h"
+    days, hours = divmod(hours, 24)
+    return f"{days}d {hours}h" if hours else f"{days}d"
+
+
+def fmt_usd(value: Decimal) -> str:
+    return "0$" if value == 0 else f"{fmt_amount(value)}$"
+
+
+async def compute_stats(context: ContextTypes.DEFAULT_TYPE, chat, user_id: int) -> dict:
+    deals = db.user_deals(user_id)
+    completed = [d for d in deals if d["status"] == "completed"]
+    amounts = [Decimal(d["closed_amount"] or d["amount"]) for d in completed]
+    durations = [
+        (d["released_at"] or d["closed_at"]) - d["created_at"]
+        for d in completed if (d["released_at"] or d["closed_at"])
+    ]
+
+    board = db.completed_worth_by_user()
+    if user_id in board:
+        mine = board[user_id]
+        rank = 1 + sum(1 for uid, v in board.items() if uid != user_id and (v[1], v[0]) > (mine[1], mine[0]))
+    else:
+        rank = len(board) + 1
+        if chat and chat.type in ("group", "supergroup"):
+            try:
+                rank = max(rank, await context.bot.get_chat_member_count(chat.id))
+            except TelegramError:
+                pass
+
+    return {
+        "total": len(completed),
+        "rank": rank,
+        "worth": sum(amounts, Decimal(0)),
+        "avg": fmt_duration(sum(durations) / len(durations)) if durations else "N/A",
+        "max": max(amounts, default=Decimal(0)),
+        "rate": round(100 * len(completed) / len(deals)) if deals else 0,
+    }
+
+
+def render_stats(username: Optional[str], user_id: int, name: Optional[str], st: dict) -> str:
+    who = f"@{html.escape(username)}" if username else html.escape(name or "User")
+    return (
+        f"{E_STATS} <b>User Stats</b>\n\n"
+        f"{E_USERNAME} <b>Username: {who} <code>{user_id}</code></b>\n"
+        f"{E_TOTAL} <b>Total Escrows:</b> <code>{st['total']}</code>\n"
+        f"{E_RANK} <b>Ranking:</b> <code>{ordinal(st['rank'])}</code>\n"
+        f"{E_WORTH} <b>Total Worth:</b> <code>{fmt_usd(st['worth'])}</code>\n"
+        f"{E_AVG_TIME} <b>Average Time:</b> <code>{st['avg']}</code>\n"
+        f"{E_MAX} <b>Max Escrow Amount:</b> <code>{fmt_usd(st['max'])}</code>\n"
+        f"{E_RATE} <b>Completion Rate:</b> <code>{st['rate']}%</code>"
+    )
+
+
+async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    msg = update.effective_message
+    user = update.effective_user
+    if not msg or not user:
+        return
+    target_id, username, name = user.id, user.username, user.first_name
+    if context.args and context.args[0].startswith("@"):
+        username = context.args[0].lstrip("@")
+        target_id = await resolve_user_id(username)
+        name = None
+        if not target_id:
+            await msg.reply_text(f"User @{html.escape(username)} not found.", parse_mode=ParseMode.HTML)
+            return
+    elif msg.reply_to_message and msg.reply_to_message.from_user and not msg.reply_to_message.from_user.is_bot:
+        target = msg.reply_to_message.from_user
+        target_id, username, name = target.id, target.username, target.first_name
+
+    st = await compute_stats(context, update.effective_chat, target_id)
+    await msg.reply_text(render_stats(username, target_id, name, st), parse_mode=ParseMode.HTML)
+
+
 async def post_init(app: Application) -> None:
     await userbot.start()
 
@@ -458,6 +558,7 @@ def main() -> None:
     app.add_handler(CommandHandler("refund", refund_cmd))
     app.add_handler(CommandHandler("close", close_cmd))
     app.add_handler(CommandHandler("verify", verify_cmd))
+    app.add_handler(CommandHandler("stats", stats_cmd))
     app.add_handler(CommandHandler("setupaddy", setupaddy_cmd))
     app.add_handler(CommandHandler("deleteaddy", deleteaddy_cmd))
     app.add_handler(CallbackQueryHandler(addy_callback, pattern=r"^addy:"))

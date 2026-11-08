@@ -50,7 +50,10 @@ _conn.executescript(
     """
 )
 _deal_cols = {r["name"] for r in _conn.execute("PRAGMA table_info(deals)")}
-for _col, _type in (("escrower_username", "TEXT"), ("closed_amount", "TEXT"), ("closed_by", "INTEGER")):
+for _col, _type in (
+    ("escrower_username", "TEXT"), ("closed_amount", "TEXT"), ("closed_by", "INTEGER"),
+    ("released_at", "INTEGER"), ("closed_at", "INTEGER"),
+):
     if _col not in _deal_cols:
         _conn.execute(f"ALTER TABLE deals ADD COLUMN {_col} {_type}")
 _conn.commit()
@@ -92,10 +95,40 @@ def set_status(deal_id: str, status: str) -> None:
     _conn.commit()
 
 
+def mark_released(deal_id: str) -> None:
+    _conn.execute(
+        "UPDATE deals SET released_at = ? WHERE deal_id = ? AND released_at IS NULL",
+        (int(time.time()), deal_id),
+    )
+    _conn.commit()
+
+
+def user_deals(user_id: int) -> list[sqlite3.Row]:
+    return _conn.execute(
+        "SELECT * FROM deals WHERE seller_id = ? OR buyer_id = ?", (user_id, user_id)
+    ).fetchall()
+
+
+def completed_worth_by_user() -> dict[int, tuple[int, float]]:
+    """user_id -> (completed deal count, total worth) over completed deals."""
+    totals: dict[int, list] = {}
+    rows = _conn.execute(
+        "SELECT seller_id, buyer_id, COALESCE(closed_amount, amount) AS amt FROM deals WHERE status = 'completed'"
+    ).fetchall()
+    for row in rows:
+        for uid in {row["seller_id"], row["buyer_id"]}:
+            if uid:
+                entry = totals.setdefault(uid, [0, 0.0])
+                entry[0] += 1
+                entry[1] += float(row["amt"])
+    return {uid: (c, w) for uid, (c, w) in totals.items()}
+
+
 def close_deal(deal_id: str, amount: str, admin_id: int) -> None:
     _conn.execute(
-        "UPDATE deals SET status = 'completed', closed_amount = ?, closed_by = ? WHERE deal_id = ?",
-        (amount, admin_id, deal_id),
+        "UPDATE deals SET status = 'completed', closed_amount = ?, closed_by = ?, closed_at = ? "
+        "WHERE deal_id = ?",
+        (amount, admin_id, int(time.time()), deal_id),
     )
     _conn.commit()
 

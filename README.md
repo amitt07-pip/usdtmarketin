@@ -34,6 +34,11 @@ Telegram escrow transaction manager bot (python-telegram-bot 22.8 + Telethon use
 deals where the user was seller or buyer. Ranking is by total worth; users with no deals are ranked last
 (group member count). Average time is `/add` → first `/release` (or `/close` if no release).
 
+`/clonestats @username | user id | reply` (escrowers): the bot asks for a filled stats message, reads
+Total Escrows / Ranking / Total Worth / Average Time / Max Escrow Amount / Completion Rate from its lines
+(a pasted /stats message works) and saves them as that user's base stats. Later completed deals add on top
+(ranking stays the cloned value).
+
 ## Escrower addresses
 
 - `/setupaddy` (escrowers, bot DM only): pick token (USDT) → network (BSC/BEP20, Polygon, ETH/ERC20, TRX/TRC20)

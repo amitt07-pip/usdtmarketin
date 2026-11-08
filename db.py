@@ -47,6 +47,17 @@ _conn.executescript(
         PRIMARY KEY (address, network),
         UNIQUE (admin_id, network)
     );
+    CREATE TABLE IF NOT EXISTS cloned_stats (
+        user_id INTEGER PRIMARY KEY,
+        total INTEGER NOT NULL,
+        rank INTEGER NOT NULL,
+        worth TEXT NOT NULL,
+        avg_seconds INTEGER,
+        max_amount TEXT NOT NULL,
+        rate INTEGER NOT NULL,
+        cloned_by INTEGER,
+        updated_at INTEGER
+    );
     """
 )
 _deal_cols = {r["name"] for r in _conn.execute("PRAGMA table_info(deals)")}
@@ -109,9 +120,33 @@ def user_deals(user_id: int) -> list[sqlite3.Row]:
     ).fetchall()
 
 
+def username_for(user_id: int) -> Optional[str]:
+    row = _conn.execute(
+        "SELECT username FROM users WHERE user_id = ? ORDER BY updated_at DESC LIMIT 1", (user_id,)
+    ).fetchone()
+    return row["username"] if row else None
+
+
+def get_cloned_stats(user_id: int) -> Optional[sqlite3.Row]:
+    return _conn.execute("SELECT * FROM cloned_stats WHERE user_id = ?", (user_id,)).fetchone()
+
+
+def save_cloned_stats(user_id: int, values: dict, admin_id: int) -> None:
+    _conn.execute(
+        "INSERT OR REPLACE INTO cloned_stats "
+        "(user_id, total, rank, worth, avg_seconds, max_amount, rate, cloned_by, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (user_id, values["total"], values["rank"], str(values["worth"]), values["avg"],
+         str(values["max"]), values["rate"], admin_id, int(time.time())),
+    )
+    _conn.commit()
+
+
 def completed_worth_by_user() -> dict[int, tuple[int, float]]:
-    """user_id -> (completed deal count, total worth) over completed deals."""
+    """user_id -> (completed deal count, total worth) over completed deals plus cloned stats."""
     totals: dict[int, list] = {}
+    for row in _conn.execute("SELECT user_id, total, worth FROM cloned_stats").fetchall():
+        totals[row["user_id"]] = [row["total"], float(row["worth"])]
     rows = _conn.execute(
         "SELECT seller_id, buyer_id, COALESCE(closed_amount, amount) AS amt FROM deals WHERE status = 'completed'"
     ).fetchall()

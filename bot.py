@@ -14,7 +14,7 @@ import addresses
 import db
 import userbot
 from config import ADMIN_IDS, BOT_TOKEN, DEAL_FEE
-from form import DealForm, fmt_amount, parse_form, parse_number
+from form import DealForm, fmt_amount, parse_form, parse_number, parse_stats
 
 logging.basicConfig(format="%(asctime)s %(name)s %(levelname)s %(message)s", level=logging.INFO)
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -476,9 +476,12 @@ async def compute_stats(context: ContextTypes.DEFAULT_TYPE, chat, user_id: int) 
         (d["released_at"] or d["closed_at"]) - d["created_at"]
         for d in completed if (d["released_at"] or d["closed_at"])
     ]
+    base = db.get_cloned_stats(user_id)
 
     board = db.completed_worth_by_user()
-    if user_id in board:
+    if base:
+        rank = base["rank"]
+    elif user_id in board:
         mine = board[user_id]
         rank = 1 + sum(1 for uid, v in board.items() if uid != user_id and (v[1], v[0]) > (mine[1], mine[0]))
     else:
@@ -489,13 +492,32 @@ async def compute_stats(context: ContextTypes.DEFAULT_TYPE, chat, user_id: int) 
             except TelegramError:
                 pass
 
+    total = len(completed)
+    worth = sum(amounts, Decimal(0))
+    max_amount = max(amounts, default=Decimal(0))
+    time_sum, time_count = sum(durations), len(durations)
+    rate = round(100 * len(completed) / len(deals)) if deals else 0
+    if base:
+        total += base["total"]
+        worth += Decimal(base["worth"])
+        max_amount = max(max_amount, Decimal(base["max_amount"]))
+        if base["avg_seconds"] is not None and base["total"]:
+            time_sum += base["avg_seconds"] * base["total"]
+            time_count += base["total"]
+        if deals:
+            base_all = round(base["total"] * 100 / base["rate"]) if base["rate"] else base["total"]
+            base_done = base["total"] if base["rate"] else 0
+            rate = round(100 * (base_done + len(completed)) / max(base_all + len(deals), 1))
+        else:
+            rate = base["rate"]
+
     return {
-        "total": len(completed),
+        "total": total,
         "rank": rank,
-        "worth": sum(amounts, Decimal(0)),
-        "avg": fmt_duration(sum(durations) / len(durations)) if durations else "N/A",
-        "max": max(amounts, default=Decimal(0)),
-        "rate": round(100 * len(completed) / len(deals)) if deals else 0,
+        "worth": worth,
+        "avg": fmt_duration(time_sum / time_count) if time_count else "N/A",
+        "max": max_amount,
+        "rate": rate,
     }
 
 
@@ -534,6 +556,80 @@ async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await msg.reply_text(render_stats(username, target_id, name, st), parse_mode=ParseMode.HTML)
 
 
+STATS_TEMPLATE = (
+    "Total Escrows: 0\n"
+    "Ranking: 1st\n"
+    "Total Worth: 0$\n"
+    "Average Time: 5m\n"
+    "Max Escrow Amount: 0$\n"
+    "Completion Rate: 100%"
+)
+
+
+async def clonestats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    msg = update.effective_message
+    user = update.effective_user
+    if not msg or not user or not is_admin(user.id):
+        return
+
+    target_id: Optional[int] = None
+    username: Optional[str] = None
+    name: Optional[str] = None
+    arg = context.args[0].strip() if context.args else ""
+    if arg.startswith("@"):
+        username = arg.lstrip("@")
+        target_id = await resolve_user_id(username)
+        if not target_id:
+            await msg.reply_text(f"User @{html.escape(username)} not found.", parse_mode=ParseMode.HTML)
+            return
+    elif arg.lstrip("-").isdigit():
+        target_id = int(arg)
+        username = db.username_for(target_id)
+    elif msg.reply_to_message and msg.reply_to_message.from_user and not msg.reply_to_message.from_user.is_bot:
+        target = msg.reply_to_message.from_user
+        target_id, username, name = target.id, target.username, target.first_name
+    else:
+        await msg.reply_text("Usage: /clonestats @username | user id | reply to the user")
+        return
+
+    context.chat_data.setdefault("clonestats", {})[user.id] = {
+        "id": target_id, "username": username, "name": name,
+    }
+    who = f"@{html.escape(username)}" if username else html.escape(name or "user")
+    await msg.reply_text(
+        f"Send the stats message for {who} <code>{target_id}</code> with filled values, e.g.\n\n"
+        f"<code>{STATS_TEMPLATE}</code>",
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def clonestats_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    msg = update.effective_message
+    user = update.effective_user
+    if not msg or not user or not is_admin(user.id):
+        return
+    pending = context.chat_data.get("clonestats", {})
+    target = pending.get(user.id)
+    if not target:
+        return
+
+    values, bad = parse_stats(msg.text)
+    if bad:
+        await msg.reply_text(
+            f"Could not read: {', '.join(bad)}. Send the stats message again.",
+        )
+        return
+
+    pending.pop(user.id, None)
+    db.save_cloned_stats(target["id"], values, user.id)
+    st = await compute_stats(context, update.effective_chat, target["id"])
+    await msg.reply_text(
+        "✅ Stats saved.\n\n" + render_stats(target["username"], target["id"], target["name"], st),
+        parse_mode=ParseMode.HTML,
+    )
+    log.info("Admin %s cloned stats to %s: %s", user.id, target["id"], values)
+
+
 async def post_init(app: Application) -> None:
     await userbot.start()
 
@@ -559,10 +655,12 @@ def main() -> None:
     app.add_handler(CommandHandler("close", close_cmd))
     app.add_handler(CommandHandler("verify", verify_cmd))
     app.add_handler(CommandHandler("stats", stats_cmd))
+    app.add_handler(CommandHandler("clonestats", clonestats_cmd))
     app.add_handler(CommandHandler("setupaddy", setupaddy_cmd))
     app.add_handler(CommandHandler("deleteaddy", deleteaddy_cmd))
     app.add_handler(CallbackQueryHandler(addy_callback, pattern=r"^addy:"))
     app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND, addy_text))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, clonestats_text), group=1)
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 

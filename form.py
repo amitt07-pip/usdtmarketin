@@ -85,3 +85,65 @@ def fmt_amount(value: Decimal) -> str:
     """100 -> 100.0, 100.50 -> 100.5, 99.25 -> 99.25"""
     text = format(value.normalize(), "f")
     return text if "." in text else f"{text}.0"
+
+
+_STAT_NUM = r"\$?\s*([\d,]+(?:\.\d+)?)"
+_STAT_SEP = r"\s*[:\-–—=]\s*"
+_STAT_RES = {
+    "total": re.compile(rf"total\s*escrows?{_STAT_SEP}([\d,]+)", re.IGNORECASE),
+    "rank": re.compile(rf"rank(?:ing)?{_STAT_SEP}#?\s*([\d,]+)", re.IGNORECASE),
+    "worth": re.compile(rf"total\s*worth{_STAT_SEP}{_STAT_NUM}", re.IGNORECASE),
+    "avg": re.compile(rf"average\s*time{_STAT_SEP}(.+)$", re.IGNORECASE),
+    "max": re.compile(rf"max(?:imum)?\s*escrow\s*amount{_STAT_SEP}{_STAT_NUM}", re.IGNORECASE),
+    "rate": re.compile(rf"completion\s*rate{_STAT_SEP}(\d+(?:\.\d+)?)", re.IGNORECASE),
+}
+_DURATION_PART = re.compile(r"(\d+)\s*(d|h|m|s)", re.IGNORECASE)
+_DURATION_SECONDS = {"d": 86400, "h": 3600, "m": 60, "s": 1}
+
+STAT_LABELS = {
+    "total": "Total Escrows", "rank": "Ranking", "worth": "Total Worth",
+    "avg": "Average Time", "max": "Max Escrow Amount", "rate": "Completion Rate",
+}
+
+
+def parse_duration(text: str) -> Optional[int]:
+    """'5m' -> 300, '2h 5m' -> 7500; raises ValueError if unparseable. 'N/A' -> None."""
+    text = text.strip().strip("`'\"")
+    if text.upper().replace(" ", "") in ("N/A", "NA", "-"):
+        return None
+    parts = _DURATION_PART.findall(text)
+    if not parts or _DURATION_PART.sub("", text).strip():
+        raise ValueError(text)
+    return sum(int(n) * _DURATION_SECONDS[u.lower()] for n, u in parts)
+
+
+def parse_stats(text: Optional[str]) -> tuple[dict, list[str]]:
+    """Returns (values, missing/invalid labels)."""
+    found: dict[str, str] = {}
+    for line in (text or "").splitlines():
+        for key, rx in _STAT_RES.items():
+            if key not in found:
+                m = rx.search(line)
+                if m:
+                    found[key] = m.group(1).strip()
+    values: dict = {}
+    bad: list[str] = []
+    for key, label in STAT_LABELS.items():
+        raw = found.get(key)
+        if raw is None:
+            bad.append(label)
+            continue
+        try:
+            if key in ("total", "rank"):
+                values[key] = int(raw.replace(",", ""))
+            elif key in ("worth", "max"):
+                values[key] = Decimal(raw.replace(",", ""))
+            elif key == "rate":
+                values[key] = max(0, min(100, round(float(raw))))
+            else:
+                values[key] = parse_duration(raw)
+        except (ValueError, InvalidOperation):
+            bad.append(label)
+    if "rank" in values and values["rank"] < 1:
+        bad.append(STAT_LABELS["rank"])
+    return values, bad

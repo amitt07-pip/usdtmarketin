@@ -39,8 +39,9 @@ _conn.executescript(
     """
 )
 _deal_cols = {r["name"] for r in _conn.execute("PRAGMA table_info(deals)")}
-if "escrower_username" not in _deal_cols:
-    _conn.execute("ALTER TABLE deals ADD COLUMN escrower_username TEXT")
+for _col, _type in (("escrower_username", "TEXT"), ("closed_amount", "TEXT"), ("closed_by", "INTEGER")):
+    if _col not in _deal_cols:
+        _conn.execute(f"ALTER TABLE deals ADD COLUMN {_col} {_type}")
 _conn.commit()
 
 
@@ -77,6 +78,14 @@ def deal_for_card(chat_id: int, card_msg_id: int) -> Optional[sqlite3.Row]:
 
 def set_status(deal_id: str, status: str) -> None:
     _conn.execute("UPDATE deals SET status = ? WHERE deal_id = ?", (status, deal_id))
+    _conn.commit()
+
+
+def close_deal(deal_id: str, amount: str, admin_id: int) -> None:
+    _conn.execute(
+        "UPDATE deals SET status = 'completed', closed_amount = ?, closed_by = ? WHERE deal_id = ?",
+        (amount, admin_id, deal_id),
+    )
     _conn.commit()
 
 

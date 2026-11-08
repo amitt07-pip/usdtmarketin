@@ -31,6 +31,10 @@ E_PARTY = emoji("5260399854500191689", "👤")
 E_AMOUNT = emoji("5116648080787112958", "💵")
 E_FEES = emoji("5260450573768990626", "💰")
 E_RELEASE = emoji("5395695537687123235", "📤")
+E_CLOSED = emoji("6296367896398399651", "✅")
+
+VOUCH_CHANNEL = "usdtmarketin"
+NO_ONGOING_DEALS = "<i>❌ No ongoing deals found for you. Create or accept a deal first.</i>"
 
 
 def is_admin(user_id: Optional[int]) -> bool:
@@ -219,11 +223,8 @@ async def release_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     deal = db.deal_for_card(msg.chat_id, card_msg.message_id) if card_msg else None
     if not deal:
         return
-    if user.id != deal["seller_id"]:
-        await msg.reply_text(
-            "<i>❌ No ongoing deals found for you. Create or accept a deal first.</i>",
-            parse_mode=ParseMode.HTML,
-        )
+    if user.id != deal["seller_id"] or deal["status"] == "completed":
+        await msg.reply_text(NO_ONGOING_DEALS, parse_mode=ParseMode.HTML)
         return
 
     markup = InlineKeyboardMarkup(
@@ -232,6 +233,36 @@ async def release_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     await msg.reply_text(render_release_request(deal), parse_mode=ParseMode.HTML, reply_markup=markup)
     db.set_status(deal["deal_id"], "release_requested")
     log.info("Release requested for %s by %s", deal["deal_id"], user.id)
+
+
+def render_closed(deal, amount: Decimal) -> str:
+    return (
+        f"{E_CLOSED} <b>Deal {deal['deal_id']} has been closed!</b>\n"
+        f"~ @{html.escape(deal['seller_username'])} and @{html.escape(deal['buyer_username'])} "
+        f"are requested to drop the vouch before leaving.\n\n"
+        f"<b>Vouch @{VOUCH_CHANNEL} for ${fmt_amount(amount)} deal, safely escrowed.</b>"
+    )
+
+
+async def close_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    msg = update.effective_message
+    user = update.effective_user
+    if not msg or not user or not is_admin(user.id):
+        return
+    card_msg = msg.reply_to_message
+    deal = db.deal_for_card(msg.chat_id, card_msg.message_id) if card_msg else None
+    if not deal:
+        return
+    if deal["status"] == "completed":
+        await msg.reply_text(NO_ONGOING_DEALS, parse_mode=ParseMode.HTML)
+        return
+
+    amount = parse_number(" ".join(context.args)) if context.args else None
+    if amount is None:
+        amount = Decimal(deal["amount"])
+    db.close_deal(deal["deal_id"], str(amount), user.id)
+    await msg.reply_text(render_closed(deal, amount), parse_mode=ParseMode.HTML)
+    log.info("Deal %s closed by %s for %s", deal["deal_id"], user.id, amount)
 
 
 async def post_init(app: Application) -> None:
@@ -255,6 +286,7 @@ def main() -> None:
     app.add_handler(MessageHandler(filters.ALL, track_users), group=-1)
     app.add_handler(CommandHandler("add", add_cmd))
     app.add_handler(CommandHandler("release", release_cmd))
+    app.add_handler(CommandHandler("close", close_cmd))
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 

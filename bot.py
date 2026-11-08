@@ -4,11 +4,13 @@ from decimal import Decimal
 from typing import Optional
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Message, MessageEntity, Update
-from telegram.constants import ChatMemberStatus
+from telegram.constants import ChatMemberStatus, ParseMode
 from telegram.error import TelegramError
-from telegram.constants import ParseMode
-from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram.ext import (
+    Application, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters,
+)
 
+import addresses
 import db
 import userbot
 from config import ADMIN_IDS, BOT_TOKEN, DEAL_FEE
@@ -32,6 +34,11 @@ E_AMOUNT = emoji("5116648080787112958", "💵")
 E_FEES = emoji("5260450573768990626", "💰")
 E_RELEASE = emoji("5395695537687123235", "📤")
 E_CLOSED = emoji("6296367896398399651", "✅")
+
+E_ADDRESS = emoji("5197288647275071607", "📍")
+E_TYPE = emoji("5877597667231534929", "🪙")
+E_BELONGS = emoji("5886412370347036129", "👤")
+E_ESCROWER_ID = emoji("5841276284155467413", "🆔")
 
 VOUCH_CHANNEL = "usdtmarketin"
 NO_ONGOING_DEALS = "<i>❌ No ongoing deals found for you. Create or accept a deal first.</i>"
@@ -273,6 +280,156 @@ async def close_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     log.info("Deal %s closed by %s for %s", deal["deal_id"], user.id, amount)
 
 
+def render_verified(display: str, records) -> str:
+    owner = records[0]
+    types = " / ".join(addresses.type_label(r["token"], r["network"]) for r in records)
+    return (
+        f"{E_CLOSED} <b>VERIFIED ADDRESS</b>\n\n"
+        f"{E_ADDRESS} <b>Address:</b> <code>{html.escape(display)}</code>\n"
+        f"{E_TYPE} <b>Type:</b> <code>{types}</code>\n"
+        f'{E_BELONGS} <b>Belongs To:</b> <a href="tg://user?id={owner["admin_id"]}">'
+        f"{html.escape(owner['admin_name'] or str(owner['admin_id']))}</a>\n"
+        f"{E_ESCROWER_ID} <b>Escrower ID:</b> <code>{owner['admin_id']}</code>\n\n"
+        f"{E_CLOSED} <i>This address is officially registered and safe to use.</i>"
+    )
+
+
+def render_not_verified(display: str) -> str:
+    return (
+        "❌ <b>NOT VERIFIED ADDRESS</b>\n\n"
+        f"<b>Address:</b> <code>{html.escape(display)}</code>\n\n"
+        "<i>This address is not registered by any escrower. Do not send funds to it.</i>"
+    )
+
+
+async def verify_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    msg = update.effective_message
+    if not msg:
+        return
+    if not context.args:
+        await msg.reply_text("Usage: /verify [address]")
+        return
+    display = context.args[0].strip()
+    records = db.address_records(addresses.normalize(display))
+    if records:
+        await msg.reply_text(render_verified(records[0]["display_address"], records), parse_mode=ParseMode.HTML)
+    else:
+        await msg.reply_text(render_not_verified(display), parse_mode=ParseMode.HTML)
+
+
+def _private_admin(update: Update) -> bool:
+    chat = update.effective_chat
+    user = update.effective_user
+    return bool(chat and user and chat.type == "private" and is_admin(user.id))
+
+
+async def setupaddy_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _private_admin(update):
+        return
+    context.user_data.pop("addy_setup", None)
+    markup = InlineKeyboardMarkup(
+        [[InlineKeyboardButton(token, callback_data=f"addy:token:{token}")] for token in addresses.TOKENS]
+    )
+    await update.effective_message.reply_text("Select token:", reply_markup=markup)
+
+
+async def addy_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    if not _private_admin(update):
+        await query.answer()
+        return
+    _, step, value = query.data.split(":", 2)
+    if step == "token" and value in addresses.TOKENS:
+        context.user_data["addy_setup"] = {"token": value}
+        markup = InlineKeyboardMarkup(
+            [[InlineKeyboardButton(label, callback_data=f"addy:net:{key}")]
+             for key, (label, _) in addresses.NETWORKS.items()]
+        )
+        await query.edit_message_text(f"Token: {value}\nSelect network:", reply_markup=markup)
+    elif step == "net" and value in addresses.NETWORKS:
+        setup = context.user_data.get("addy_setup")
+        if not setup:
+            await query.answer("Send /setupaddy again", show_alert=True)
+            return
+        if any(r["network"] == value for r in db.admin_addresses(update.effective_user.id)):
+            context.user_data.pop("addy_setup", None)
+            await query.edit_message_text(
+                f"You already have a locked {addresses.NETWORKS[value][0]} address. Use /deleteaddy first."
+            )
+            await query.answer()
+            return
+        setup["network"] = value
+        await query.edit_message_text(
+            f"Token: {setup['token']}\nNetwork: {addresses.NETWORKS[value][0]}\n\nSend your address now."
+        )
+    elif step == "del":
+        if db.delete_address(update.effective_user.id, value):
+            await query.edit_message_text(f"Deleted your {addresses.NETWORKS[value][0]} address.")
+        else:
+            await query.edit_message_text("No locked address found for that network.")
+    await query.answer()
+
+
+async def addy_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _private_admin(update):
+        return
+    setup = context.user_data.get("addy_setup")
+    if not setup or "network" not in setup:
+        return
+    msg = update.effective_message
+    user = update.effective_user
+    display = msg.text.strip()
+    network, token = setup["network"], setup["token"]
+    if not addresses.is_valid(network, display):
+        await msg.reply_text(f"Invalid {addresses.NETWORKS[network][0]} address. Send a valid address.")
+        return
+    key = addresses.normalize(display)
+    owner = db.address_owner(key)
+    if owner and owner != user.id:
+        context.user_data.pop("addy_setup", None)
+        await msg.reply_text("This address is already locked by another escrower.")
+        return
+    if any(r["network"] == network for r in db.admin_addresses(user.id)):
+        context.user_data.pop("addy_setup", None)
+        await msg.reply_text("You already have a locked address on this network. Use /deleteaddy first.")
+        return
+    db.lock_address(key, display, network, token, user.id, user.first_name)
+    context.user_data.pop("addy_setup", None)
+    await msg.reply_text(
+        f"🔒 Address locked\n\n<b>Type:</b> <code>{addresses.type_label(token, network)}</code>\n"
+        f"<b>Address:</b> <code>{html.escape(display)}</code>",
+        parse_mode=ParseMode.HTML,
+    )
+    log.info("Admin %s locked %s address %s", user.id, network, display)
+
+
+async def deleteaddy_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not _private_admin(update):
+        return
+    msg = update.effective_message
+    context.user_data.pop("addy_setup", None)
+    rows = db.admin_addresses(update.effective_user.id)
+    if not rows:
+        await msg.reply_text("You have no locked address. Use /setupaddy to set one.")
+        return
+    if len(rows) == 1:
+        row = rows[0]
+        db.delete_address(row["admin_id"], row["network"])
+        await msg.reply_text(
+            f"Deleted your <code>{addresses.type_label(row['token'], row['network'])}</code> address "
+            f"<code>{html.escape(row['display_address'])}</code>. Use /setupaddy to set a new one.",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+    markup = InlineKeyboardMarkup(
+        [[InlineKeyboardButton(
+            f"{addresses.type_label(r['token'], r['network'])} {r['display_address'][:6]}…{r['display_address'][-4:]}",
+            callback_data=f"addy:del:{r['network']}",
+        )] for r in rows]
+    )
+    await msg.reply_text("Select the address to delete:", reply_markup=markup)
+
+
 async def post_init(app: Application) -> None:
     await userbot.start()
 
@@ -296,6 +453,11 @@ def main() -> None:
     app.add_handler(CommandHandler("release", release_cmd))
     app.add_handler(CommandHandler("refund", refund_cmd))
     app.add_handler(CommandHandler("close", close_cmd))
+    app.add_handler(CommandHandler("verify", verify_cmd))
+    app.add_handler(CommandHandler("setupaddy", setupaddy_cmd))
+    app.add_handler(CommandHandler("deleteaddy", deleteaddy_cmd))
+    app.add_handler(CallbackQueryHandler(addy_callback, pattern=r"^addy:"))
+    app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND, addy_text))
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 

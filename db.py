@@ -36,6 +36,17 @@ _conn.executescript(
         created_at INTEGER NOT NULL,
         UNIQUE (chat_id, form_msg_id)
     );
+    CREATE TABLE IF NOT EXISTS addresses (
+        address TEXT NOT NULL,
+        network TEXT NOT NULL,
+        token TEXT NOT NULL,
+        admin_id INTEGER NOT NULL,
+        admin_name TEXT,
+        display_address TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (address, network),
+        UNIQUE (admin_id, network)
+    );
     """
 )
 _deal_cols = {r["name"] for r in _conn.execute("PRAGMA table_info(deals)")}
@@ -105,3 +116,35 @@ def create_deal(**fields) -> str:
 def set_card_msg(deal_id: str, msg_id: int) -> None:
     _conn.execute("UPDATE deals SET card_msg_id = ? WHERE deal_id = ?", (msg_id, deal_id))
     _conn.commit()
+
+
+def address_owner(address: str) -> Optional[int]:
+    row = _conn.execute("SELECT admin_id FROM addresses WHERE address = ? LIMIT 1", (address,)).fetchone()
+    return row["admin_id"] if row else None
+
+
+def admin_addresses(admin_id: int) -> list[sqlite3.Row]:
+    return _conn.execute(
+        "SELECT * FROM addresses WHERE admin_id = ? ORDER BY created_at", (admin_id,)
+    ).fetchall()
+
+
+def address_records(address: str) -> list[sqlite3.Row]:
+    return _conn.execute(
+        "SELECT * FROM addresses WHERE address = ? ORDER BY created_at", (address,)
+    ).fetchall()
+
+
+def lock_address(address: str, display: str, network: str, token: str, admin_id: int, admin_name: str) -> None:
+    _conn.execute(
+        "INSERT INTO addresses (address, network, token, admin_id, admin_name, display_address, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (address, network, token, admin_id, admin_name, display, int(time.time())),
+    )
+    _conn.commit()
+
+
+def delete_address(admin_id: int, network: str) -> bool:
+    cur = _conn.execute("DELETE FROM addresses WHERE admin_id = ? AND network = ?", (admin_id, network))
+    _conn.commit()
+    return cur.rowcount > 0

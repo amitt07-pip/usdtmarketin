@@ -28,6 +28,14 @@ Telegram escrow transaction manager bot (python-telegram-bot 22.8 + Telethon use
    The bot posts the closed/vouch message and marks the deal `completed`; later `/close` or `/release`
    on it get "❌ No ongoing deals found for you…".
 
+## Escrower addresses
+
+- `/setupaddy` (escrowers, bot DM only): pick token (USDT) → network (BSC/BEP20, Polygon, ETH/ERC20, TRX/TRC20)
+  → send the address. Format is validated (EVM `0x` + 40 hex, Tron base58check). One address per network per
+  escrower; an address locked by one escrower can't be locked by another.
+- `/deleteaddy` (escrowers, bot DM): deletes the locked address (buttons to choose if several networks).
+- `/verify <address>` (anyone): VERIFIED ADDRESS card (type, owner, escrower ID) or NOT VERIFIED.
+
 Seller/buyer user IDs come from a local cache of every user the bot sees in its groups,
 then from the userbot (`get_entity`). Turn the bot's group privacy off (BotFather → /setprivacy)
 or make it admin so it sees all messages. The premium emoji need the bot owner to have Premium.

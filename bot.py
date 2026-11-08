@@ -218,7 +218,6 @@ async def release_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     card_msg = msg.reply_to_message
     deal = db.deal_for_card(msg.chat_id, card_msg.message_id) if card_msg else None
     if not deal:
-        await msg.reply_text("Reply to the Escrow Deal message with /release")
         return
     if user.id != deal["seller_id"]:
         await msg.reply_text(

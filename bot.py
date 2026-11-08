@@ -662,7 +662,7 @@ def main() -> None:
     app.add_handler(CommandHandler("refund", refund_cmd, filters=filters.Chat(ESCROW_GROUP_IDS)))
     app.add_handler(CommandHandler("close", close_cmd, filters=filters.Chat(ESCROW_GROUP_IDS)))
     app.add_handler(CommandHandler("verify", verify_cmd))
-    app.add_handler(CommandHandler("stats", stats_cmd, filters=~filters.Chat(ESCROW_GROUP_IDS)))
+    app.add_handler(CommandHandler("stats", stats_cmd, filters=filters.Chat(CHAT_GROUP_ID)))
     app.add_handler(CommandHandler("clonestats", clonestats_cmd))
     app.add_handler(CommandHandler("setupaddy", setupaddy_cmd))
     app.add_handler(CommandHandler("deleteaddy", deleteaddy_cmd))

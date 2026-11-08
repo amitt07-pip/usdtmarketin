@@ -39,6 +39,9 @@ E_ADDRESS = emoji("5197288647275071607", "📍")
 E_TYPE = emoji("5877597667231534929", "🪙")
 E_BELONGS = emoji("5886412370347036129", "👤")
 E_ESCROWER_ID = emoji("5841276284155467413", "🆔")
+E_UNKNOWN = emoji("5213195952008997792", "⚠️")
+E_MASKED = emoji("5240241223632954241", "📍")
+E_NOT_REGISTERED = emoji("5019523782004441717", "❌")
 
 VOUCH_CHANNEL = "usdtmarketin"
 NO_ONGOING_DEALS = "<i>❌ No ongoing deals found for you. Create or accept a deal first.</i>"
@@ -295,10 +298,11 @@ def render_verified(display: str, records) -> str:
 
 
 def render_not_verified(display: str) -> str:
+    masked = f"{display[:4]}****{display[-4:]}" if len(display) > 8 else display
     return (
-        "❌ <b>NOT VERIFIED ADDRESS</b>\n\n"
-        f"<b>Address:</b> <code>{html.escape(display)}</code>\n\n"
-        "<i>This address is not registered by any escrower. Do not send funds to it.</i>"
+        f"{E_UNKNOWN} <b>UNKNOWN ADDRESS</b>\n\n"
+        f"{E_MASKED} {html.escape(masked)}\n\n"
+        f"{E_NOT_REGISTERED} <i>This address is NOT registered to any of our escrowers.</i>"
     )
 
 

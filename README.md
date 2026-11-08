@@ -23,6 +23,7 @@ Telegram escrow transaction manager bot (python-telegram-bot 22.8 + Telethon use
    "🚫 Deal not created" listing only the missing party with "Contact Seller"/"Contact Buyer" buttons.
 3. The seller replies to the Escrow Deal message with `/release`. The bot posts a Release Request
    (deal ID, release amount, seller/buyer/escrow) with a "View Deal Form" link to that deal message.
+   Vice versa, the buyer can send `/refund` for a Refund Request. Both are notifications only.
 4. An admin replies to the Escrow Deal message with `/close [amount]` (amount defaults to the received amount).
    The bot posts the closed/vouch message and marks the deal `completed`; later `/close` or `/release`
    on it get "❌ No ongoing deals found for you…".

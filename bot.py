@@ -201,20 +201,20 @@ def user_ref(username: Optional[str], user_id: Optional[int], name: Optional[str
     return f'<a href="tg://user?id={user_id}">{html.escape(name or str(user_id))}</a>'
 
 
-def render_release_request(deal) -> str:
+def render_request(deal, kind: str) -> str:
     amount = Decimal(deal["amount"])
     fee = Decimal(deal["fee"])
     return (
-        f"{E_RELEASE} <b>Release Request</b>\n\n"
+        f"{E_RELEASE} <b>{kind} Request</b>\n\n"
         f"<code>{deal['deal_id']}</code> | ${fmt_amount(amount - fee)} (after {fmt_amount(fee).removesuffix('.0')}$ fees)\n"
         f"<b>Seller:</b> @{html.escape(deal['seller_username'])}\n"
         f"<b>Buyer:</b> @{html.escape(deal['buyer_username'])}\n"
         f"<b>Escrow:</b> {user_ref(deal['escrower_username'], deal['escrower_id'], deal['escrower_name'])}\n\n"
-        f"<i>Review and Release if valid</i>"
+        f"<i>Review and {kind} if valid</i>"
     )
 
 
-async def release_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def request_cmd(update: Update, kind: str, party: str) -> None:
     msg = update.effective_message
     user = update.effective_user
     if not msg or not user:
@@ -223,16 +223,24 @@ async def release_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     deal = db.deal_for_card(msg.chat_id, card_msg.message_id) if card_msg else None
     if not deal:
         return
-    if user.id != deal["seller_id"] or deal["status"] == "completed":
+    if user.id != deal[f"{party}_id"] or deal["status"] == "completed":
         await msg.reply_text(NO_ONGOING_DEALS, parse_mode=ParseMode.HTML)
         return
 
     markup = InlineKeyboardMarkup(
         [[InlineKeyboardButton("View Deal Form", url=message_link(msg.chat, deal["card_msg_id"]))]]
     )
-    await msg.reply_text(render_release_request(deal), parse_mode=ParseMode.HTML, reply_markup=markup)
-    db.set_status(deal["deal_id"], "release_requested")
-    log.info("Release requested for %s by %s", deal["deal_id"], user.id)
+    await msg.reply_text(render_request(deal, kind), parse_mode=ParseMode.HTML, reply_markup=markup)
+    db.set_status(deal["deal_id"], f"{kind.lower()}_requested")
+    log.info("%s requested for %s by %s", kind, deal["deal_id"], user.id)
+
+
+async def release_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await request_cmd(update, "Release", "seller")
+
+
+async def refund_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await request_cmd(update, "Refund", "buyer")
 
 
 def render_closed(deal, amount: Decimal) -> str:
@@ -286,6 +294,7 @@ def main() -> None:
     app.add_handler(MessageHandler(filters.ALL, track_users), group=-1)
     app.add_handler(CommandHandler("add", add_cmd))
     app.add_handler(CommandHandler("release", release_cmd))
+    app.add_handler(CommandHandler("refund", refund_cmd))
     app.add_handler(CommandHandler("close", close_cmd))
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 

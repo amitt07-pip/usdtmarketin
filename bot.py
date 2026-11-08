@@ -221,7 +221,10 @@ async def release_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await msg.reply_text("Reply to the Escrow Deal message with /release")
         return
     if user.id != deal["seller_id"]:
-        await msg.reply_text("Only the seller of this deal can use /release.")
+        await msg.reply_text(
+            "<i>❌ No ongoing deals found for you. Create or accept a deal first.</i>",
+            parse_mode=ParseMode.HTML,
+        )
         return
 
     markup = InlineKeyboardMarkup(

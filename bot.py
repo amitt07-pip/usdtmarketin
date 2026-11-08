@@ -14,7 +14,7 @@ from telegram.ext import (
 import addresses
 import db
 import userbot
-from config import ADMIN_IDS, BOT_TOKEN, DEAL_FEE, ESCROW_GROUP_ID
+from config import ADMIN_IDS, BOT_TOKEN, ALLOWED_GROUP_IDS, CHAT_GROUP_ID, DEAL_FEE, ESCROW_GROUP_IDS
 from form import DealForm, fmt_amount, parse_form, parse_number, parse_stats
 
 logging.basicConfig(format="%(asctime)s %(name)s %(levelname)s %(message)s", level=logging.INFO)
@@ -74,7 +74,7 @@ def remember_from_message(msg: Optional[Message]) -> None:
 
 async def only_escrow_group(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat = update.effective_chat
-    if chat and chat.type != "private" and chat.id != ESCROW_GROUP_ID:
+    if chat and chat.type != "private" and chat.id not in ALLOWED_GROUP_IDS:
         raise ApplicationHandlerStop
 
 
@@ -493,9 +493,9 @@ async def compute_stats(context: ContextTypes.DEFAULT_TYPE, chat, user_id: int) 
         rank = 1 + sum(1 for uid, v in board.items() if uid != user_id and (v[1], v[0]) > (mine[1], mine[0]))
     else:
         rank = len(board) + 1
-        if ESCROW_GROUP_ID:
+        if CHAT_GROUP_ID:
             try:
-                rank = max(rank, await context.bot.get_chat_member_count(ESCROW_GROUP_ID))
+                rank = max(rank, await context.bot.get_chat_member_count(CHAT_GROUP_ID))
             except TelegramError:
                 pass
 
@@ -657,12 +657,12 @@ def main() -> None:
     )
     app.add_handler(TypeHandler(Update, only_escrow_group), group=-2)
     app.add_handler(MessageHandler(filters.ALL, track_users), group=-1)
-    app.add_handler(CommandHandler("add", add_cmd, filters=filters.Chat(ESCROW_GROUP_ID)))
-    app.add_handler(CommandHandler("release", release_cmd, filters=filters.Chat(ESCROW_GROUP_ID)))
-    app.add_handler(CommandHandler("refund", refund_cmd, filters=filters.Chat(ESCROW_GROUP_ID)))
-    app.add_handler(CommandHandler("close", close_cmd, filters=filters.Chat(ESCROW_GROUP_ID)))
+    app.add_handler(CommandHandler("add", add_cmd, filters=filters.Chat(ESCROW_GROUP_IDS)))
+    app.add_handler(CommandHandler("release", release_cmd, filters=filters.Chat(ESCROW_GROUP_IDS)))
+    app.add_handler(CommandHandler("refund", refund_cmd, filters=filters.Chat(ESCROW_GROUP_IDS)))
+    app.add_handler(CommandHandler("close", close_cmd, filters=filters.Chat(ESCROW_GROUP_IDS)))
     app.add_handler(CommandHandler("verify", verify_cmd))
-    app.add_handler(CommandHandler("stats", stats_cmd))
+    app.add_handler(CommandHandler("stats", stats_cmd, filters=~filters.Chat(ESCROW_GROUP_IDS)))
     app.add_handler(CommandHandler("clonestats", clonestats_cmd))
     app.add_handler(CommandHandler("setupaddy", setupaddy_cmd))
     app.add_handler(CommandHandler("deleteaddy", deleteaddy_cmd))

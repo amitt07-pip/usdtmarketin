@@ -39,8 +39,10 @@ Total Escrows / Ranking / Total Worth / Average Time / Max Escrow Amount / Compl
 (a pasted /stats message works) and saves them as that user's base stats. Later completed deals add on top
 (ranking stays the cloned value).
 
-The bot only works in `ESCROW_GROUP_ID` (default `-1002905230936`) and in DMs; it ignores every other group.
-`/add`, `/release`, `/refund` and `/close` only work in the escrow group.
+Groups: `ESCROW_GROUP_IDS` (default `-1002905230936,-1004331931828`) run the deal flows (`/add`, `/release`,
+`/refund`, `/close` only work there); `CHAT_GROUP_ID` (default `-1003916239874`) is the chat group, whose member
+count is used for new users' ranking. `/stats` works in the chat group and DMs only (not escrow groups); `/verify` and `/clonestats` work in all of
+these and in DMs; every other group is ignored.
 
 ## Escrower addresses
 

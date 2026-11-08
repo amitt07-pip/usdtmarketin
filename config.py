@@ -17,7 +17,9 @@ ADMIN_IDS = _ids(os.getenv("ADMIN_IDS", ""))
 DEAL_FEE = Decimal(os.getenv("DEAL_FEE", "1.00"))
 DEAL_ID_PREFIX = "DL-MRKTIN"
 DEAL_ID_START = int(os.getenv("DEAL_ID_START", "10001"))
-ESCROW_GROUP_ID = int(os.getenv("ESCROW_GROUP_ID", "-1002905230936"))
+ESCROW_GROUP_IDS = _ids(os.getenv("ESCROW_GROUP_IDS", "") or "-1002905230936,-1004331931828")
+CHAT_GROUP_ID = int(os.getenv("CHAT_GROUP_ID", "") or "-1003916239874")
+ALLOWED_GROUP_IDS = ESCROW_GROUP_IDS | {CHAT_GROUP_ID}
 DB_PATH = BASE_DIR / os.getenv("DB_FILE", "escrow.db")
 
 API_ID = int(os.getenv("API_ID", "0") or 0)

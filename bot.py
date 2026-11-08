@@ -532,7 +532,7 @@ def render_stats(username: Optional[str], user_id: int, name: Optional[str], st:
     who = f"@{html.escape(username)}" if username else html.escape(name or "User")
     return (
         f"{E_STATS} <b>User Stats</b>\n\n"
-        f"{E_USERNAME} <b>Username: {who} [{user_id}]</b>\n"
+        f"{E_USERNAME} <b>Username: {who}</b> [<b>{user_id}</b>]\n"
         f"{E_TOTAL} <b>Total Escrows:</b> <code>{st['total']}</code>\n"
         f"{E_RANK} <b>Ranking:</b> <code>{ordinal(st['rank'])}</code>\n"
         f"{E_WORTH} <b>Total Worth:</b> <code>{fmt_usd(st['worth'])}</code>\n"

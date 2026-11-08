@@ -19,6 +19,8 @@ Telegram escrow transaction manager bot (python-telegram-bot 22.8 + Telethon use
 2. An admin (`ADMIN_IDS`) replies to the form with `/add <received amount>`.
    The bot replies to the form with the deal card (`DL-MRKTIN<number>`, fixed `DEAL_FEE`).
    Non-admins get no response.
+   If the seller and/or buyer is not a member of the group, the bot replies
+   "🚫 Deal not created" listing only the missing party with "Contact Seller"/"Contact Buyer" buttons.
 
 Seller/buyer user IDs come from a local cache of every user the bot sees in its groups,
 then from the userbot (`get_entity`). Turn the bot's group privacy off (BotFather → /setprivacy)

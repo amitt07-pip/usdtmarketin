@@ -3,7 +3,9 @@ import logging
 from decimal import Decimal
 from typing import Optional
 
-from telegram import Message, MessageEntity, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Message, MessageEntity, Update
+from telegram.constants import ChatMemberStatus
+from telegram.error import TelegramError
 from telegram.constants import ParseMode
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
@@ -60,6 +62,30 @@ async def resolve_user_id(username: str) -> Optional[int]:
     if user_id:
         db.remember_user(user_id, username)
     return user_id
+
+
+async def in_group(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: Optional[int]) -> bool:
+    if not user_id:
+        return False
+    try:
+        member = await context.bot.get_chat_member(chat_id, user_id)
+    except TelegramError as exc:
+        log.info("get_chat_member(%s, %s) failed: %s", chat_id, user_id, exc)
+        return False
+    if member.status in (ChatMemberStatus.LEFT, ChatMemberStatus.BANNED):
+        return False
+    if member.status == ChatMemberStatus.RESTRICTED:
+        return bool(getattr(member, "is_member", False))
+    return True
+
+
+def render_not_in_group(missing: list[tuple[str, str]]) -> tuple[str, InlineKeyboardMarkup]:
+    lines = ["🚫 <b>Deal not created</b>"]
+    lines += [f"• {role} @{html.escape(username)} — not in <b>Escrow group</b>" for role, username in missing]
+    buttons = [
+        InlineKeyboardButton(f"Contact {role}", url=f"https://t.me/{username}") for role, username in missing
+    ]
+    return "\n".join(lines), InlineKeyboardMarkup([buttons])
 
 
 def party_line(username: str, user_id: Optional[int]) -> str:
@@ -121,6 +147,16 @@ async def add_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     remember_from_message(form_msg)
     seller_id = await resolve_user_id(form.seller)
     buyer_id = await resolve_user_id(form.buyer)
+
+    missing = [
+        (role, username)
+        for role, username, uid in (("Seller", form.seller, seller_id), ("Buyer", form.buyer, buyer_id))
+        if not await in_group(context, msg.chat_id, uid)
+    ]
+    if missing:
+        text, markup = render_not_in_group(missing)
+        await form_msg.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=markup)
+        return
 
     deal_id = db.create_deal(
         chat_id=msg.chat_id,

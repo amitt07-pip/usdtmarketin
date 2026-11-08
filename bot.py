@@ -30,6 +30,7 @@ E_ESCROWER_BADGE = emoji("5972185809300753162", "✅")
 E_PARTY = emoji("5260399854500191689", "👤")
 E_AMOUNT = emoji("5116648080787112958", "💵")
 E_FEES = emoji("5260450573768990626", "💰")
+E_RELEASE = emoji("5395695537687123235", "📤")
 
 
 def is_admin(user_id: Optional[int]) -> bool:
@@ -163,6 +164,7 @@ async def add_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         form_msg_id=form_msg.message_id,
         escrower_id=user.id,
         escrower_name=user.first_name,
+        escrower_username=user.username,
         seller_username=form.seller,
         seller_id=seller_id,
         buyer_username=form.buyer,
@@ -180,6 +182,54 @@ async def add_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
     db.set_card_msg(deal_id, card.message_id)
     log.info("Deal %s created by %s in chat %s", deal_id, user.id, msg.chat_id)
+
+
+def message_link(chat, msg_id: int) -> str:
+    if chat.username:
+        return f"https://t.me/{chat.username}/{msg_id}"
+    internal_id = str(chat.id).removeprefix("-100").lstrip("-")
+    return f"https://t.me/c/{internal_id}/{msg_id}"
+
+
+def user_ref(username: Optional[str], user_id: Optional[int], name: Optional[str]) -> str:
+    if username:
+        return f"@{html.escape(username)}"
+    return f'<a href="tg://user?id={user_id}">{html.escape(name or str(user_id))}</a>'
+
+
+def render_release_request(deal) -> str:
+    amount = Decimal(deal["amount"])
+    fee = Decimal(deal["fee"])
+    return (
+        f"{E_RELEASE} <b>Release Request</b>\n\n"
+        f"<code>{deal['deal_id']}</code> | ${fmt_amount(amount - fee)} (after {fmt_amount(fee).removesuffix('.0')}$ fees)\n"
+        f"<b>Seller:</b> @{html.escape(deal['seller_username'])}\n"
+        f"<b>Buyer:</b> @{html.escape(deal['buyer_username'])}\n"
+        f"<b>Escrow:</b> {user_ref(deal['escrower_username'], deal['escrower_id'], deal['escrower_name'])}\n\n"
+        f"<i>Review and Release if valid</i>"
+    )
+
+
+async def release_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    msg = update.effective_message
+    user = update.effective_user
+    if not msg or not user:
+        return
+    card_msg = msg.reply_to_message
+    deal = db.deal_for_card(msg.chat_id, card_msg.message_id) if card_msg else None
+    if not deal:
+        await msg.reply_text("Reply to the Escrow Deal message with /release")
+        return
+    if user.id != deal["seller_id"]:
+        await msg.reply_text("Only the seller of this deal can use /release.")
+        return
+
+    markup = InlineKeyboardMarkup(
+        [[InlineKeyboardButton("View Deal Form", url=message_link(msg.chat, deal["card_msg_id"]))]]
+    )
+    await msg.reply_text(render_release_request(deal), parse_mode=ParseMode.HTML, reply_markup=markup)
+    db.set_status(deal["deal_id"], "release_requested")
+    log.info("Release requested for %s by %s", deal["deal_id"], user.id)
 
 
 async def post_init(app: Application) -> None:
@@ -202,6 +252,7 @@ def main() -> None:
     )
     app.add_handler(MessageHandler(filters.ALL, track_users), group=-1)
     app.add_handler(CommandHandler("add", add_cmd))
+    app.add_handler(CommandHandler("release", release_cmd))
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 

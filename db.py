@@ -38,6 +38,9 @@ _conn.executescript(
     );
     """
 )
+_deal_cols = {r["name"] for r in _conn.execute("PRAGMA table_info(deals)")}
+if "escrower_username" not in _deal_cols:
+    _conn.execute("ALTER TABLE deals ADD COLUMN escrower_username TEXT")
 _conn.commit()
 
 
@@ -64,6 +67,17 @@ def deal_for_form(chat_id: int, form_msg_id: int) -> Optional[sqlite3.Row]:
     return _conn.execute(
         "SELECT * FROM deals WHERE chat_id = ? AND form_msg_id = ?", (chat_id, form_msg_id)
     ).fetchone()
+
+
+def deal_for_card(chat_id: int, card_msg_id: int) -> Optional[sqlite3.Row]:
+    return _conn.execute(
+        "SELECT * FROM deals WHERE chat_id = ? AND card_msg_id = ?", (chat_id, card_msg_id)
+    ).fetchone()
+
+
+def set_status(deal_id: str, status: str) -> None:
+    _conn.execute("UPDATE deals SET status = ? WHERE deal_id = ?", (status, deal_id))
+    _conn.commit()
 
 
 def create_deal(**fields) -> str:

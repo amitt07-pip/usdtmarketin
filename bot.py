@@ -137,7 +137,7 @@ def render_deal_card(
         f"{E_PARTY} <b>Buyer</b> - {party_line(form.buyer, buyer_id)}\n"
         f"{E_AMOUNT} <b>Amount</b> - <code>{fmt_amount(amount)}</code>$\n"
         f"{E_FEES} <b>Total Fees</b> - <code>{DEAL_FEE:.2f}</code>$\n\n"
-        f"📤 <code>{fmt_amount(release)}</code>$ to be released!"
+        f"{E_FEES} <code>{fmt_amount(release)}</code>$ to be released!"
     )
 
 

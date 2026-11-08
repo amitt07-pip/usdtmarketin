@@ -39,6 +39,9 @@ Total Escrows / Ranking / Total Worth / Average Time / Max Escrow Amount / Compl
 (a pasted /stats message works) and saves them as that user's base stats. Later completed deals add on top
 (ranking stays the cloned value).
 
+The bot only works in `ESCROW_GROUP_ID` (default `-1002905230936`) and in DMs; it ignores every other group.
+`/add`, `/release`, `/refund` and `/close` only work in the escrow group.
+
 ## Escrower addresses
 
 - `/setupaddy` (escrowers, bot DM only): pick token (USDT) → network (BSC/BEP20, Polygon, ETH/ERC20, TRX/TRC20)

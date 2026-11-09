@@ -7,14 +7,15 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Message, Messag
 from telegram.constants import ChatMemberStatus, ParseMode
 from telegram.error import TelegramError
 from telegram.ext import (
-    Application, ApplicationHandlerStop, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler,
+    Application, ApplicationHandlerStop, CallbackQueryHandler, ChatMemberHandler, CommandHandler, ContextTypes,
+    MessageHandler,
     TypeHandler, filters,
 )
 
 import addresses
 import db
 import userbot
-from config import ADMIN_IDS, BOT_TOKEN, ALLOWED_GROUP_IDS, CHAT_GROUP_ID, DEAL_FEE, ESCROW_GROUP_IDS
+from config import ADMIN_IDS, BOT_TOKEN, ALLOWED_GROUP_IDS, CHAT_GROUP_ID, DEAL_FEE, ESCROW_GROUP_IDS, JOIN_LOG_CHANNEL_ID
 from form import DealForm, fmt_amount, parse_form, parse_number, parse_stats
 
 logging.basicConfig(format="%(asctime)s %(name)s %(levelname)s %(message)s", level=logging.INFO)
@@ -85,6 +86,57 @@ async def track_users(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         remember_from_message(msg.reply_to_message)
 
 
+def _is_present(member) -> bool:
+    if member.status in (ChatMemberStatus.LEFT, ChatMemberStatus.BANNED):
+        return False
+    if member.status == ChatMemberStatus.RESTRICTED:
+        return bool(getattr(member, "is_member", False))
+    return True
+
+
+def user_tag(u) -> str:
+    if u.username:
+        return f"@{html.escape(u.username)}"
+    return f'<a href="tg://user?id={u.id}">{html.escape(u.first_name or str(u.id))}</a>'
+
+
+async def chat_member_update(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    cmu = update.chat_member
+    if not cmu or cmu.chat.id != CHAT_GROUP_ID:
+        return
+    was, now = _is_present(cmu.old_chat_member), _is_present(cmu.new_chat_member)
+    user, actor = cmu.new_chat_member.user, cmu.from_user
+    if user.is_bot or was == now:
+        return
+    if user.username:
+        db.remember_user(user.id, user.username)
+
+    if now:
+        text = (
+            f"~ {user_tag(user)} (<code>{user.id}</code>) has been added by "
+            f"{user_tag(actor)} (<code>{actor.id}</code>) in the <b>UsdtMarketin</b> Group ‼️"
+        )
+        try:
+            sent = await context.bot.send_message(
+                JOIN_LOG_CHANNEL_ID, text, parse_mode=ParseMode.HTML
+            )
+        except TelegramError as exc:
+            log.warning("Join notice for %s failed: %s", user.id, exc)
+            return
+        db.save_join_notice(user.id, JOIN_LOG_CHANNEL_ID, sent.message_id, text)
+    else:
+        notice = db.pop_join_notice(user.id)
+        if not notice:
+            return
+        try:
+            await context.bot.edit_message_text(
+                f"<s>{notice['text']}</s>", chat_id=notice["channel_id"], message_id=notice["msg_id"],
+                parse_mode=ParseMode.HTML,
+            )
+        except TelegramError as exc:
+            log.warning("Strike join notice for %s failed: %s", user.id, exc)
+
+
 async def resolve_user_id(username: str) -> Optional[int]:
     user_id = db.lookup_user_id(username)
     if user_id:
@@ -103,11 +155,7 @@ async def in_group(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: Op
     except TelegramError as exc:
         log.info("get_chat_member(%s, %s) failed: %s", chat_id, user_id, exc)
         return False
-    if member.status in (ChatMemberStatus.LEFT, ChatMemberStatus.BANNED):
-        return False
-    if member.status == ChatMemberStatus.RESTRICTED:
-        return bool(getattr(member, "is_member", False))
-    return True
+    return _is_present(member)
 
 
 def render_not_in_group(missing: list[tuple[str, str]]) -> tuple[str, InlineKeyboardMarkup]:
@@ -657,6 +705,7 @@ def main() -> None:
     )
     app.add_handler(TypeHandler(Update, only_escrow_group), group=-2)
     app.add_handler(MessageHandler(filters.ALL, track_users), group=-1)
+    app.add_handler(ChatMemberHandler(chat_member_update, ChatMemberHandler.CHAT_MEMBER))
     app.add_handler(CommandHandler("add", add_cmd, filters=filters.Chat(ESCROW_GROUP_IDS)))
     app.add_handler(CommandHandler("release", release_cmd, filters=filters.Chat(ESCROW_GROUP_IDS)))
     app.add_handler(CommandHandler("refund", refund_cmd, filters=filters.Chat(ESCROW_GROUP_IDS)))

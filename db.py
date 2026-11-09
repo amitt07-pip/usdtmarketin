@@ -58,6 +58,14 @@ _conn.executescript(
         cloned_by INTEGER,
         updated_at INTEGER
     );
+
+    CREATE TABLE IF NOT EXISTS join_notices (
+        user_id INTEGER PRIMARY KEY,
+        channel_id INTEGER NOT NULL,
+        msg_id INTEGER NOT NULL,
+        text TEXT NOT NULL,
+        created_at INTEGER
+    );
     """
 )
 _deal_cols = {r["name"] for r in _conn.execute("PRAGMA table_info(deals)")}
@@ -216,3 +224,19 @@ def delete_address(admin_id: int, network: str) -> bool:
     cur = _conn.execute("DELETE FROM addresses WHERE admin_id = ? AND network = ?", (admin_id, network))
     _conn.commit()
     return cur.rowcount > 0
+
+
+def save_join_notice(user_id: int, channel_id: int, msg_id: int, text: str) -> None:
+    _conn.execute(
+        "INSERT OR REPLACE INTO join_notices (user_id, channel_id, msg_id, text, created_at) VALUES (?, ?, ?, ?, ?)",
+        (user_id, channel_id, msg_id, text, int(time.time())),
+    )
+    _conn.commit()
+
+
+def pop_join_notice(user_id: int) -> Optional[sqlite3.Row]:
+    row = _conn.execute("SELECT * FROM join_notices WHERE user_id = ?", (user_id,)).fetchone()
+    if row:
+        _conn.execute("DELETE FROM join_notices WHERE user_id = ?", (user_id,))
+        _conn.commit()
+    return row

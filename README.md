@@ -44,6 +44,10 @@ Groups: `ESCROW_GROUP_IDS` (default `-1002905230936,-1004331931828`) run the dea
 count is used for new users' ranking. `/stats` works only in the chat group (ranking is among the chat group's members); `/verify` and `/clonestats` work in all of
 these and in DMs; every other group is ignored.
 
+Join log: when someone joins `CHAT_GROUP_ID`, the bot posts "~ @user (id) has been added by @adder (id) in the
+**UsdtMarketin** Group ‼️" to `JOIN_LOG_CHANNEL_ID` (default `-1004433511813`); when they leave, that post is struck
+through. The bot must be admin in the chat group (to receive member updates) and admin in the channel (to post/edit).
+
 ## Escrower addresses
 
 - `/setupaddy` (escrowers, bot DM only): pick token (USDT) → network (BSC/BEP20, Polygon, ETH/ERC20, TRX/TRC20)

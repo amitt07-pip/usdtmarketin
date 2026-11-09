@@ -1,0 +1,12 @@
+[Unit]
+Description=USDT Market escrow bot
+After=network-online.target
+
+[Service]
+WorkingDirectory=/root/usdtmarketin
+ExecStart=/usr/bin/python3 /root/usdtmarketin/bot.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

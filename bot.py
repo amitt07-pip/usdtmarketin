@@ -97,7 +97,7 @@ def _is_present(member) -> bool:
 def user_tag(u) -> str:
     if u.username:
         return f"@{html.escape(u.username)}"
-    return f'<a href="tg://user?id={u.id}">{html.escape(u.first_name or str(u.id))}</a>'
+    return f'<a href="tg://user?id={u.id}">{html.escape(u.full_name or str(u.id))}</a>'
 
 
 async def chat_member_update(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
